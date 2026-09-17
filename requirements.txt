@@ -1,0 +1,2 @@
+# Dependencies are added phase by phase, as each one is actually needed.
+# Phase 1 will add something like: httpx, apscheduler
