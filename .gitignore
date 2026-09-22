@@ -26,3 +26,6 @@ htmlcov/
 # Database
 *.db
 *.sqlite3
+
+# Local ingestion output (Phase 1 stand-in for the database)
+data/
