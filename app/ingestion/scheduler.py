@@ -1,23 +1,22 @@
 """
-Phase 1 - Task B: Scheduler + retry wrapper.
+Phase 1/2 - Scheduler + retry wrapper.
 
 Calls fetcher.fetch_prices() on a fixed interval, forever, with retry +
 exponential backoff on failure so one flaky request doesn't crash the
-whole pipeline. Each successful poll is appended to a local JSONL file -
-a stand-in for the database Phase 2 will introduce.
+whole pipeline. Each successful poll is persisted via the storage layer
+(Postgres, as of Phase 2) - this module no longer touches the database
+directly, it just calls save_tick().
 
-Depends on app/ingestion/fetcher.py - merge that PR first, then pull the
-updated main before testing this against the real fetcher.
+Depends on app/ingestion/fetcher.py and app/storage/repository.py.
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-from pathlib import Path
 
 from app.ingestion.fetcher import FetchError, fetch_prices
+from app.storage.repository import save_tick
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -26,8 +25,6 @@ ASSETS = ["bitcoin", "ethereum", "solana", "cardano", "dogecoin"]
 POLL_INTERVAL_SECONDS = 30
 MAX_RETRIES = 3
 BACKOFF_BASE_SECONDS = 2
-
-DATA_FILE = Path("data/ticks.jsonl")
 
 
 async def fetch_with_retry(assets: list[str]) -> dict | None:
@@ -53,24 +50,16 @@ async def fetch_with_retry(assets: list[str]) -> dict | None:
     return None
 
 
-def write_tick(asset: str, price: float, fetched_at) -> None:
-    """Append one price reading to the local JSONL file."""
-    DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with DATA_FILE.open("a") as f:
-        f.write(json.dumps({
-            "asset": asset,
-            "price": price,
-            "fetched_at": fetched_at.isoformat(),
-        }) + "\n")
-
-
 async def run_forever() -> None:
     logger.info("Starting ingestion loop: %s every %ds", ASSETS, POLL_INTERVAL_SECONDS)
     while True:
         prices = await fetch_with_retry(ASSETS)
         if prices is not None:
             for asset, data in prices.items():
-                write_tick(asset, data["price"], data["fetched_at"])
+                # save_tick() is a blocking (synchronous) DB call - run
+                # it in a worker thread so it never stalls the async
+                # event loop that's also waiting on the next fetch.
+                await asyncio.to_thread(save_tick, asset, data["price"], data["fetched_at"])
                 logger.info("%s: $%s", asset, data["price"])
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
