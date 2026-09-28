@@ -15,13 +15,13 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from app.config import ASSETS
 from app.ingestion.fetcher import FetchError, fetch_prices
 from app.storage.repository import save_tick
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-ASSETS = ["bitcoin", "ethereum", "solana", "cardano", "dogecoin"]
 POLL_INTERVAL_SECONDS = 30
 MAX_RETRIES = 3
 BACKOFF_BASE_SECONDS = 2
