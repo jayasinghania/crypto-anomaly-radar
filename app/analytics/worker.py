@@ -24,6 +24,7 @@ from app.analytics.aggregator import (
 )
 from app.analytics.stats import compute_metric_for_bar, save_metric
 from app.config import ASSETS
+from app.realtime.publisher import publish_anomaly, publish_metric
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -40,25 +41,51 @@ def latest_completed_bucket() -> datetime:
     return current_bucket - timedelta(seconds=BAR_INTERVAL_SECONDS)
 
 
-def run_cycle() -> None:
+def run_cycle() -> list[dict]:
+    """
+    Runs synchronously in a worker thread (see run_forever below). Returns
+    plain dicts, not ORM objects - by the time this function returns, the
+    DB sessions used inside it have already closed, and reading an
+    attribute off a detached ORM object after that is exactly the
+    DetachedInstanceError bug from earlier in Phase 3. Plain values have
+    no such problem.
+    """
     bucket_start = latest_completed_bucket()
+    results: list[dict] = []
+
     for asset in ASSETS:
         bar = build_bar_for_asset(asset, bucket_start)
         if bar is None:
             logger.info("%s: no ticks in bucket %s, skipping", asset, bucket_start.isoformat())
             continue
 
+        close_price = bar.close
         upsert_bar(bar)
 
         metric = compute_metric_for_bar(asset, bucket_start)
-        if metric is not None:
-            save_metric(metric)
-            flag = " <-- ANOMALY" if metric.is_anomaly else ""
-            z_display = f"{metric.z_score:.2f}" if metric.z_score is not None else "n/a"
-            logger.info(
-                "%s %s: close=%.2f z=%s%s",
-                asset, bucket_start.isoformat(), bar.close, z_display, flag,
-            )
+        if metric is None:
+            continue
+
+        is_anomaly = metric.is_anomaly
+        z_score = metric.z_score
+        save_metric(metric)
+
+        flag = " <-- ANOMALY" if is_anomaly else ""
+        z_display = f"{z_score:.2f}" if z_score is not None else "n/a"
+        logger.info(
+            "%s %s: close=%.2f z=%s%s",
+            asset, bucket_start.isoformat(), close_price, z_display, flag,
+        )
+
+        results.append({
+            "asset": asset,
+            "bucket_start": bucket_start,
+            "close": close_price,
+            "z_score": z_score,
+            "is_anomaly": is_anomaly,
+        })
+
+    return results
 
 
 async def run_forever() -> None:
@@ -66,7 +93,13 @@ async def run_forever() -> None:
     while True:
         # run_cycle() does several blocking DB calls - offload the whole
         # cycle to a thread so it can't stall this loop's own timing.
-        await asyncio.to_thread(run_cycle)
+        # Publishing happens out here afterward, back on the event loop,
+        # since publish_* are async Redis calls.
+        results = await asyncio.to_thread(run_cycle)
+        for r in results:
+            await publish_metric(r["asset"], r["z_score"], r["is_anomaly"], r["bucket_start"])
+            if r["is_anomaly"]:
+                await publish_anomaly(r["asset"], r["z_score"], r["close"], r["bucket_start"])
         await asyncio.sleep(BAR_INTERVAL_SECONDS)
 
 

@@ -32,8 +32,8 @@ Data sources -> Ingestion layer -> Storage layer -> Analytics layer -> API layer
 | 1     | Ingestion (live price fetching)          | Done           |
 | 2     | Storage layer (Postgres + models)        | Done           |
 | 3     | Analytics layer (stats + anomalies)      | Done           |
-| 4     | REST API                                 | In progress    |
-| 5     | WebSocket + live dashboard               | Not started    |
+| 4     | REST API                                 | Done           |
+| 5     | WebSocket + live dashboard               | In progress    |
 | 6     | Forecasting (stretch)                    | Not started    |
 | 7     | Docker, tests, CI, deploy                | Not started    |
 

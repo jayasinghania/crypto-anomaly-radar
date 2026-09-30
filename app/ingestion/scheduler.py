@@ -17,6 +17,7 @@ import logging
 
 from app.config import ASSETS
 from app.ingestion.fetcher import FetchError, fetch_prices
+from app.realtime.publisher import publish_tick
 from app.storage.repository import save_tick
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -60,6 +61,7 @@ async def run_forever() -> None:
                 # it in a worker thread so it never stalls the async
                 # event loop that's also waiting on the next fetch.
                 await asyncio.to_thread(save_tick, asset, data["price"], data["fetched_at"])
+                await publish_tick(asset, data["price"], data["fetched_at"])
                 logger.info("%s: $%s", asset, data["price"])
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
 

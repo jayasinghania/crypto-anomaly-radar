@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crypto Anomaly Radar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="/dashboard/vendor/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0B1220;
+    --panel: #121A2B;
+    --border: #223049;
+    --text: #E7ECF5;
+    --text-dim: #8593AD;
+    --accent: #45E0B5;
+    --accent-dim: rgba(69, 224, 181, 0.14);
+    --danger: #F0544F;
+    --danger-dim: rgba(240, 84, 79, 0.14);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Space Grotesk', sans-serif;
+    min-height: 100vh;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 28px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  header h1 {
+    font-size: 20px;
+    font-weight: 500;
+    margin: 0;
+    letter-spacing: 0.01em;
+  }
+  header h1 span { color: var(--text-dim); font-weight: 400; }
+  .status-group {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--danger);
+    display: inline-block;
+    margin-right: 8px;
+  }
+  .status-dot.live {
+    background: var(--accent);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(69, 224, 181, 0.5); }
+    70% { box-shadow: 0 0 0 8px rgba(69, 224, 181, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(69, 224, 181, 0); }
+  }
+  main {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 20px;
+    padding: 24px 28px;
+    align-items: start;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 16px;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    transition: border-color 0.4s ease;
+  }
+  .card.flash { border-color: var(--danger); }
+  .card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 4px;
+  }
+  .card-top .asset-name {
+    font-size: 15px;
+    font-weight: 500;
+    text-transform: capitalize;
+  }
+  .card-top .z-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .card-top .z-badge.anomaly { color: var(--danger); font-weight: 600; }
+  .price {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 22px;
+    font-weight: 500;
+    margin-bottom: 10px;
+  }
+  .chart-wrap { height: 90px; }
+  .panel-title {
+    font-size: 15px;
+    font-weight: 500;
+    margin: 0 0 14px 0;
+    color: var(--text-dim);
+  }
+  .anomaly-log {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    max-height: 560px;
+    overflow-y: auto;
+  }
+  .anomaly-entry {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12.5px;
+    border-left: 2px solid var(--danger);
+    padding: 8px 10px;
+    margin-bottom: 8px;
+    background: var(--danger-dim);
+    border-radius: 0 4px 4px 0;
+  }
+  .anomaly-entry .a-asset { color: var(--text); font-weight: 600; text-transform: capitalize; }
+  .anomaly-entry .a-meta { color: var(--text-dim); display: block; margin-top: 2px; }
+  .empty-state {
+    color: var(--text-dim);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  @media (max-width: 860px) {
+    main { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Crypto Anomaly Radar <span>&mdash; live feed</span></h1>
+  <div class="status-group">
+    <span><span class="status-dot" id="status-dot"></span><span id="status-text">connecting&hellip;</span></span>
+    <span>avg latency <strong id="latency" style="color: var(--text)">&mdash;</strong></span>
+  </div>
+</header>
+
+<main>
+  <section class="grid" id="asset-grid"></section>
+
+  <section class="anomaly-log">
+    <p class="panel-title">Anomaly log</p>
+    <div id="anomaly-list">
+      <p class="empty-state" id="anomaly-empty">No anomalies flagged yet. Each price bar is checked against a rolling 20-bar baseline &mdash; a flag here means a real statistical deviation, not routine noise.</p>
+    </div>
+  </section>
+</main>
+
+<script>
+const ASSETS = ["bitcoin", "ethereum", "solana", "cardano", "dogecoin"];
+const MAX_POINTS = 40;
+const state = {};
+let latencies = [];
+
+function formatPrice(p) {
+  return p >= 1 ? `$${p.toLocaleString(undefined, {maximumFractionDigits: 2})}` : `$${p.toFixed(4)}`;
+}
+
+function buildCards() {
+  const grid = document.getElementById('asset-grid');
+  ASSETS.forEach(asset => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.id = `card-${asset}`;
+    card.innerHTML = `
+      <div class="card-top">
+        <span class="asset-name">${asset}</span>
+        <span class="z-badge" id="z-${asset}">z &mdash;</span>
+      </div>
+      <div class="price" id="price-${asset}">&mdash;</div>
+      <div class="chart-wrap"><canvas id="chart-${asset}"></canvas></div>
+    `;
+    grid.appendChild(card);
+    state[asset] = { prices: [], anomalyFlags: [], chart: null };
+
+    const ctx = document.getElementById(`chart-${asset}`).getContext('2d');
+    const chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          data: [],
+          borderColor: '#45E0B5',
+          backgroundColor: 'rgba(69,224,181,0.08)',
+          borderWidth: 1.5,
+          fill: true,
+          tension: 0.3,
+          pointRadius: (c) => (state[asset].anomalyFlags[c.dataIndex] ? 4 : 0),
+          pointBackgroundColor: '#F0544F',
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        interaction: { intersect: false },
+        plugins: { legend: { display: false }, tooltip: { enabled: false } },
+        scales: { x: { display: false }, y: { display: false } },
+      },
+    });
+
+    state[asset].chart = chart;
+  });
+}
+
+function handleTick(msg) {
+  const s = state[msg.asset];
+  if (!s) return;
+
+  s.prices.push(msg.price);
+  s.anomalyFlags.push(false);
+  if (s.prices.length > MAX_POINTS) { s.prices.shift(); s.anomalyFlags.shift(); }
+
+  s.chart.data.labels = s.prices.map((_, i) => i);
+  s.chart.data.datasets[0].data = s.prices;
+  s.chart.update('none');
+
+  document.getElementById(`price-${msg.asset}`).textContent = formatPrice(msg.price);
+  trackLatency(msg.fetched_at);
+}
+
+function handleMetric(msg) {
+  const el = document.getElementById(`z-${msg.asset}`);
+  if (!el) return;
+  if (msg.z_score === null || msg.z_score === undefined) {
+    el.textContent = 'z —';
+    el.classList.remove('anomaly');
+    return;
+  }
+  el.textContent = `z ${msg.z_score.toFixed(2)}`;
+  el.classList.toggle('anomaly', msg.is_anomaly);
+}
+
+function handleAnomaly(msg) {
+  const s = state[msg.asset];
+  if (s && s.anomalyFlags.length) {
+    s.anomalyFlags[s.anomalyFlags.length - 1] = true;
+    s.chart.update('none');
+  }
+
+  const card = document.getElementById(`card-${msg.asset}`);
+  if (card) {
+    card.classList.add('flash');
+    setTimeout(() => card.classList.remove('flash'), 2500);
+  }
+
+  const emptyEl = document.getElementById('anomaly-empty');
+  if (emptyEl) emptyEl.remove();
+
+  const entry = document.createElement('div');
+  entry.className = 'anomaly-entry';
+  const time = new Date(msg.ts).toLocaleTimeString();
+  entry.innerHTML = `
+    <span class="a-asset">${msg.asset}</span> &mdash; z ${msg.z_score.toFixed(2)}
+    <span class="a-meta">${formatPrice(msg.price)} at ${time}</span>
+  `;
+  document.getElementById('anomaly-list').prepend(entry);
+}
+
+function trackLatency(fetchedAtIso) {
+  // fetched_at is stamped the moment the price left the ingestion
+  // fetcher - so this measures the true end-to-end delay through DB
+  // write, Redis publish, and WebSocket delivery to this browser.
+  const latency = Date.now() - Date.parse(fetchedAtIso);
+  latencies.push(latency);
+  if (latencies.length > 20) latencies.shift();
+  const avg = latencies.reduce((a, b) => a + b, 0) / latencies.length;
+  document.getElementById('latency').textContent = `${Math.round(avg)}ms`;
+}
+
+function setStatus(live) {
+  document.getElementById('status-dot').classList.toggle('live', live);
+  document.getElementById('status-text').textContent = live ? 'live' : 'reconnecting…';
+}
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+  ws.onopen = () => setStatus(true);
+  ws.onclose = () => { setStatus(false); setTimeout(connect, 2000); };
+  ws.onerror = () => ws.close();
+  ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    if (msg.type === 'tick') handleTick(msg);
+    else if (msg.type === 'metric') handleMetric(msg);
+    else if (msg.type === 'anomaly') handleAnomaly(msg);
+  };
+}
+
+buildCards();
+connect();
+</script>
+</body>
+</html>

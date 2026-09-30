@@ -11,4 +11,7 @@ python-dotenv==1.0.1
 
 # Phase 4 (API)
 fastapi==0.136.0
-uvicorn==0.46.0
+uvicorn[standard]==0.46.0
+
+# Phase 5 (real-time: Redis pub/sub + WebSocket)
+redis==5.0.8

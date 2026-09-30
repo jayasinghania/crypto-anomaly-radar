@@ -12,11 +12,13 @@ you build this in parallel without stepping on each other.
 from __future__ import annotations
 
 import asyncio
+import os
 from datetime import datetime, timezone
 
 import httpx
 
 COINGECKO_URL = "https://api.coingecko.com/api/v3/simple/price"
+COINGECKO_API_KEY = os.getenv("COINGECKO_API_KEY")  # optional fallback if headers alone aren't enough
 
 
 class FetchError(Exception):
@@ -46,9 +48,16 @@ async def fetch_prices(assets: list[str], vs_currency: str = "usd") -> dict[str,
         "vs_currencies": vs_currency,
     }
 
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+    }
+    if COINGECKO_API_KEY:
+        headers["x-cg-demo-api-key"] = COINGECKO_API_KEY
+
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
-            response = await client.get(COINGECKO_URL, params=params)
+            response = await client.get(COINGECKO_URL, params=params, headers=headers)
             response.raise_for_status()
             raw = response.json()
         except httpx.HTTPError as exc:
