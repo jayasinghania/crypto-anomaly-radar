@@ -113,6 +113,9 @@
     margin-bottom: 10px;
   }
   .chart-wrap { height: 90px; }
+  .forecast { margin-top: 8px; font-size: 12px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+  .forecast .up { color: var(--accent); }
+  .forecast .down { color: var(--danger); }
   .panel-title {
     font-size: 15px;
     font-weight: 500;
@@ -192,8 +195,10 @@ function buildCards() {
       </div>
       <div class="price" id="price-${asset}">&mdash;</div>
       <div class="chart-wrap"><canvas id="chart-${asset}"></canvas></div>
+      <div class="forecast" id="forecast-${asset}">forecast &mdash;</div>
     `;
     grid.appendChild(card);
+
     state[asset] = { prices: [], anomalyFlags: [], chart: null };
 
     const ctx = document.getElementById(`chart-${asset}`).getContext('2d');
@@ -311,8 +316,38 @@ function connect() {
   };
 }
 
+async function refreshForecast(asset) {
+  const el = document.getElementById(`forecast-${asset}`);
+  if (!el) return;
+  try {
+    const [fRes, aRes] = await Promise.all([
+      fetch(`/forecast/${asset}?horizon=5`),
+      fetch(`/forecast/${asset}/accuracy?horizon=5`),
+    ]);
+    if (!fRes.ok) { el.textContent = 'forecast: collecting data...'; return; }
+    const f = await fRes.json();
+    const target = f.forecast[f.forecast.length - 1].price;
+    const pct = ((target - f.last_close) / f.last_close) * 100;
+    const dir = pct >= 0 ? 'up' : 'down';
+    let verdict = '';
+    if (aRes.ok) {
+      const a = await aRes.json();
+      if (a.samples > 0) {
+        verdict = a.beats_naive ? ' | beats naive baseline' : ' | does not beat naive baseline';
+      }
+    }
+    el.innerHTML = `5-min forecast: ${formatPrice(target)} <span class="${dir}">(${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%)</span>${verdict}`;
+  } catch (e) {
+    el.textContent = 'forecast unavailable';
+  }
+}
+
+function refreshAllForecasts() { ASSETS.forEach(refreshForecast); }
+
 buildCards();
 connect();
+refreshAllForecasts();
+setInterval(refreshAllForecasts, 60000);
 </script>
 </body>
 </html>

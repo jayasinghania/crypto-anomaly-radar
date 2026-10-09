@@ -1,5 +1,5 @@
 """
-Phase 4/5 - API entry point.
+Phase 4/5/6 - API entry point.
 
 Run with: uvicorn app.api.main:app --reload   (from the repo root)
 Then open http://127.0.0.1:8000/docs for interactive API documentation,
@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routers import anomalies, assets, bars, metrics, prices, ws
+from app.api.routers import anomalies, assets, bars, forecast, metrics, prices, ws
 from app.realtime.broadcaster import redis_listener
 
 
@@ -53,6 +53,7 @@ app.include_router(prices.router)
 app.include_router(bars.router)
 app.include_router(metrics.router)
 app.include_router(anomalies.router)
+app.include_router(forecast.router)
 app.include_router(ws.router)
 
 # Serves app/dashboard/index.html at /dashboard/
