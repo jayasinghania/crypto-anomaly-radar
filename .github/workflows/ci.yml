@@ -1,0 +1,66 @@
+name: CI
+
+# Runs on every pull request, and on every push to main.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: pytest -v
+
+  docker:
+    name: Docker stack smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Builds the image and starts the API plus what it depends on
+      # (Postgres, Redis, and the one-shot migration job).
+      - name: Build and start the stack
+        run: docker compose up -d --build api
+
+      - name: Wait for the API to answer /health
+        run: |
+          for i in $(seq 1 40); do
+            if curl -fsS http://localhost:8000/health; then
+              echo
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "API never became healthy"
+          exit 1
+
+      - name: Dashboard and its vendored Chart.js are being served
+        run: |
+          curl -fsS http://localhost:8000/dashboard/ -o /dev/null
+          curl -fsS http://localhost:8000/dashboard/vendor/chart.umd.min.js -o /dev/null
+
+      - name: Show container logs if something failed
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

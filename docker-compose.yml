@@ -1,3 +1,12 @@
+# Shared by every app service: same image, same connection settings.
+# Inside Docker the hosts are "db" and "redis" (service names), not localhost.
+x-app: &app
+  build: .
+  environment:
+    DATABASE_URL: postgresql://crypto_pulse:crypto_pulse@db:5432/crypto_pulse
+    REDIS_URL: redis://redis:6379/0
+    COINGECKO_API_KEY: ${COINGECKO_API_KEY:-}
+
 services:
   db:
     image: postgres:16
@@ -28,6 +37,57 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  # One-shot job: creates/updates the tables, then exits. Everything else
+  # waits for it to finish successfully before starting.
+  migrate:
+    <<: *app
+    container_name: crypto_pulse_migrate
+    command: alembic upgrade head
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    container_name: crypto_pulse_api
+    command: uvicorn app.api.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  scheduler:
+    <<: *app
+    container_name: crypto_pulse_scheduler
+    command: python -m app.ingestion.scheduler
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  worker:
+    <<: *app
+    container_name: crypto_pulse_worker
+    command: python -m app.analytics.worker
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
 
 volumes:
   pgdata:
